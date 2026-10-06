@@ -1,0 +1,10 @@
+# 统一行尾为 LF，避免 Windows 上 checkout 时被自动转成 CRLF
+# （否则同一份仓库在不同机器/不同目录下会出现"内容不一致"的假差异）
+* text=auto eol=lf
+
+# 二进制资源不要做任何转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.zip binary
