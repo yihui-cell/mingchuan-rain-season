@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#06090f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>雨落无声 · Rain Has No Sound</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;background:#06090f;}
+body{
+  font-family:"Songti SC","STSong","SimSun","Noto Serif SC",Georgia,serif;
+  color:#e8f0f6;user-select:none;
+  -webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+}
+@supports (height:100dvh){ html,body,#app,#stage{height:100dvh;} }
+#app{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+#stage{position:relative;width:100%;height:100%;max-width:1500px;overflow:hidden;background:#06090f;}
+
+/* ==================== 背景 ==================== */
+#bg{position:absolute;inset:0;background-size:cover;background-position:center;transition:opacity .7s ease;}
+#bg::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(180deg, rgba(0,0,0,.34) 0%, rgba(0,0,0,.10) 34%, rgba(0,0,0,.62) 100%);
+}
+#bg.black::after{background:rgba(0,0,0,.82);}
+#rainLayer{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .6s;}
+#rainLayer.on{opacity:1;}
+.drop{position:absolute;width:1px;background:linear-gradient(180deg,rgba(190,215,240,0) 0%,rgba(190,215,240,.55) 60%,rgba(190,215,240,0) 100%);}
+
+/* ==================== 立绘 ==================== */
+/* 立绘：height 定高后必须用 aspect-ratio 撑出宽度，
+   否则 background-size:contain 撑不开盒模型、width 会塌成 0（一作踩过的坑）。
+   立绘源图统一为 1024x1536 = 2:3。 */
+.sprite{
+  position:absolute;bottom:0;right:2%;height:88%;aspect-ratio:2 / 3;
+  background-repeat:no-repeat;background-position:bottom center;background-size:contain;
+  opacity:0;transform:translateY(18px);
+  transition:opacity .55s ease, transform .55s ease, filter .4s;
+  pointer-events:none;
+  filter:drop-shadow(0 10px 34px rgba(0,0,0,.6));
+}
+.sprite.on{opacity:1;transform:translateY(0);}
+.sprite.dim{filter:drop-shadow(0 10px 34px rgba(0,0,0,.6)) brightness(.62) saturate(.75);}
+
+/* ==================== 顶部 HUD ==================== */
+#sceneTag{
+  position:absolute;top:26px;left:34px;z-index:12;
+  padding:7px 15px;font-size:12px;letter-spacing:.24em;
+  background:rgba(8,14,22,.6);border:1px solid rgba(120,200,220,.28);
+  border-radius:2px;color:rgba(190,225,235,.8);backdrop-filter:blur(4px);
+  transition:opacity .5s;
+}
+#hud{position:absolute;top:26px;right:34px;z-index:12;display:flex;gap:11px;align-items:center;}
+.hudBtn{
+  padding:8px 15px;font-size:13px;letter-spacing:.14em;
+  background:rgba(8,14,22,.62);border:1px solid rgba(255,255,255,.18);
+  border-radius:2px;color:rgba(255,255,255,.7);cursor:pointer;
+  transition:.25s;font-family:inherit;backdrop-filter:blur(4px);
+}
+.hudBtn:hover{background:rgba(30,52,70,.85);color:#fff;border-color:rgba(160,220,235,.45);}
+.hudBtn.active{background:rgba(28,92,110,.88);color:#eafcff;border-color:rgba(150,240,250,.7);}
+
+/* ==================== 系统面板（三数值） ==================== */
+#sysPanel{
+  position:absolute;left:34px;bottom:16%;z-index:12;width:196px;
+  padding:13px 15px 14px;
+  background:linear-gradient(180deg, rgba(6,22,30,.82), rgba(4,14,20,.86));
+  border:1px solid rgba(90,215,230,.34);border-radius:3px;
+  box-shadow:0 0 0 1px rgba(90,215,230,.08) inset, 0 8px 30px rgba(0,0,0,.5);
+  opacity:0;transition:opacity .6s;
+}
+#sysPanel.on{opacity:1;}
+#sysPanel .ph{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-size:10px;letter-spacing:.2em;color:rgba(120,220,235,.62);
+  border-bottom:1px solid rgba(90,215,230,.2);padding-bottom:7px;margin-bottom:9px;
+}
+#sysPanel .ph b{font-size:14px;letter-spacing:.05em;color:#7fe4f0;font-weight:400;}
+.srow{margin-bottom:8px;}
+.srow .lb{display:flex;justify-content:space-between;font-size:11px;letter-spacing:.16em;color:rgba(190,220,230,.62);margin-bottom:4px;}
+.srow .lb i{font-style:normal;color:rgba(230,245,250,.85);}
+.sbar{height:4px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden;}
+.sbar span{display:block;height:100%;width:0;border-radius:2px;transition:width 1s cubic-bezier(.2,.8,.3,1);}
+.sbar.h span{background:linear-gradient(90deg,#2b7f96,#6fe6f2);}
+.sbar.x span{background:linear-gradient(90deg,#3d8a7a,#7fd8c0);}
+.sbar.z span{background:linear-gradient(90deg,#9a6ab8,#d8a8e8);}
+#sysPanel .note{font-size:10px;letter-spacing:.1em;color:rgba(120,200,215,.45);margin-top:9px;line-height:1.6;}
+
+/* ==================== 对话框 ==================== */
+#dialogue{
+  position:absolute;left:50%;bottom:3.6%;transform:translateX(-50%) translateY(14px);
+  width:min(1050px,92%);z-index:20;
+  background:linear-gradient(180deg, rgba(6,16,24,.88), rgba(3,9,14,.94));
+  border:1px solid rgba(120,190,215,.22);border-radius:4px;
+  padding:26px 40px 30px;
+  box-shadow:0 18px 60px rgba(0,0,0,.7);
+  backdrop-filter:blur(8px);
+  opacity:0;transition:opacity .4s, transform .4s;pointer-events:none;
+}
+#dialogue.on{opacity:1;transform:translateX(-50%) translateY(0);}
+#speaker{
+  position:absolute;top:-14px;left:34px;padding:5px 20px;font-size:14px;letter-spacing:.22em;
+  background:linear-gradient(180deg,#123039,#0a1e25);border:1px solid rgba(120,220,235,.3);
+  border-radius:2px;color:#bff0f8;box-shadow:0 4px 16px rgba(0,0,0,.5);
+}
+#speaker.hide{display:none;}
+#speaker.aq{background:linear-gradient(180deg,#3a2c46,#221a2c);border-color:rgba(210,160,235,.35);color:#edd6f5;}
+#speaker.me{background:linear-gradient(180deg,#123039,#0a1e25);border-color:rgba(120,220,235,.35);color:#c6f2fa;}
+#text{font-size:19px;line-height:2.02;letter-spacing:.04em;min-height:82px;color:#eaf2f7;text-shadow:0 1px 3px rgba(0,0,0,.6);}
+#text.narr{color:#c6d6e2;}
+#text.think{color:#b9a8cf;font-style:italic;padding-left:14px;border-left:2px solid rgba(185,168,207,.4);}
+#text.sysline{color:#7fe4f0;font-size:16px;letter-spacing:.16em;font-family:"Menlo","Consolas",monospace;}
+#nextHint{
+  position:absolute;right:30px;bottom:12px;font-size:12px;color:rgba(160,225,240,.42);
+  animation:blink 1.5s ease-in-out infinite;letter-spacing:.16em;
+}
+@keyframes blink{0%,100%{opacity:.28;}50%{opacity:.9;}}
+
+/* ==================== 选项 ==================== */
+#choices{
+  position:absolute;inset:0;z-index:40;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:15px;
+  background:rgba(2,6,10,.5);backdrop-filter:blur(3px);padding:40px;
+}
+#choices.on{display:flex;}
+.choice{
+  width:min(760px,92%);text-align:left;padding:17px 24px;
+  font-family:inherit;font-size:16px;line-height:1.66;color:#dfeaf2;
+  background:linear-gradient(180deg, rgba(10,24,34,.9), rgba(6,15,22,.92));
+  border:1px solid rgba(120,195,220,.26);border-radius:3px;cursor:pointer;
+  transition:.25s;display:flex;flex-direction:column;gap:5px;
+  animation:choiceIn .45s both;
+}
+.choice:hover{background:linear-gradient(180deg, rgba(20,50,68,.95), rgba(12,30,42,.95));
+  border-color:rgba(150,235,250,.6);transform:translateX(6px);}
+.choice span{display:block;}
+.choice .tip{font-size:11px;letter-spacing:.16em;color:rgba(130,225,240,.6);}
+@keyframes choiceIn{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
+
+/* ==================== 章节卡 ==================== */
+#chapterCard{
+  position:absolute;inset:0;z-index:55;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;background:rgba(2,6,10,.88);
+  opacity:0;pointer-events:none;transition:opacity .5s;
+}
+#chapterCard.on{opacity:1;}
+#chapterCard .ccNum{font-size:13px;letter-spacing:.5em;color:rgba(130,220,235,.6);padding-left:.5em;}
+#chapterCard .ccTitle{font-size:36px;letter-spacing:.16em;margin-top:16px;color:#e6f4f9;text-align:center;padding:0 24px;}
+#chapterCard .ccLine{width:110px;height:1px;background:linear-gradient(90deg,transparent,rgba(130,220,235,.7),transparent);margin-top:22px;}
+
+/* ==================== 大字幕 ==================== */
+#bigText{
+  position:absolute;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;
+  pointer-events:none;opacity:0;transition:opacity .35s;
+}
+#bigText.on{opacity:1;}
+#bigText span{
+  font-size:clamp(28px,6.4vw,60px);letter-spacing:.2em;color:#fff;
+  text-shadow:0 0 26px rgba(120,220,240,.6),0 4px 20px rgba(0,0,0,.9);
+  text-align:center;padding:0 20px;
+}
+
+/* ==================== 系统弹窗 ==================== */
+#sysboxLayer{
+  position:absolute;inset:0;z-index:80;display:none;
+  align-items:center;justify-content:center;background:rgba(1,5,9,.6);backdrop-filter:blur(2px);
+}
+#sysboxLayer.on{display:flex;}
+#sysbox{
+  width:min(600px,90%);padding:30px 34px 26px;
+  background:linear-gradient(180deg, rgba(5,20,27,.96), rgba(3,12,18,.98));
+  border:1px solid rgba(90,220,235,.45);border-radius:4px;
+  box-shadow:0 0 40px rgba(60,200,225,.16), 0 20px 60px rgba(0,0,0,.7);
+  position:relative;
+}
+#sysbox::before{
+  content:"";position:absolute;top:-1px;left:-1px;right:-1px;height:2px;
+  background:linear-gradient(90deg,transparent,#5fe0f0,transparent);
+}
+#sysbox .sbHead{
+  display:flex;align-items:center;gap:9px;font-size:11px;letter-spacing:.26em;
+  color:rgba(110,225,240,.72);margin-bottom:18px;
+}
+#sysbox .sbDot{width:7px;height:7px;border-radius:50%;background:#5fe0f0;box-shadow:0 0 10px #5fe0f0;}
+#sysbox .sbBody{
+  font-size:17px;line-height:1.95;color:#cdeef5;letter-spacing:.04em;
+  font-family:"Menlo","Consolas","Songti SC",monospace;white-space:pre-wrap;
+}
+#sysbox .sbFoot{
+  margin-top:22px;text-align:right;font-size:11px;letter-spacing:.24em;
+  color:rgba(120,220,235,.5);animation:blink 1.6s ease-in-out infinite;
+}
+#sysbox .cursor{display:inline-block;width:8px;height:17px;background:#5fe0f0;vertical-align:-2px;margin-left:3px;animation:blink .9s step-end infinite;}
+
+/* ==================== 命名 ==================== */
+#renameBox{
+  position:absolute;inset:0;z-index:85;display:none;flex-direction:column;
+  align-items:center;justify-content:center;background:rgba(3,8,13,.92);backdrop-filter:blur(6px);
+}
+#renameBox.on{display:flex;}
+#renameBox label{font-size:13px;letter-spacing:.3em;color:rgba(150,220,235,.6);margin-bottom:18px;}
+#renameBox input{
+  width:290px;padding:14px;text-align:center;font-size:20px;letter-spacing:.2em;
+  background:rgba(8,22,30,.9);border:1px solid rgba(120,220,235,.35);color:#dff4f9;
+  border-radius:2px;font-family:inherit;outline:none;
+}
+#renameBox input:focus{border-color:rgba(140,240,255,.75);}
+#renameBox button{
+  margin-top:24px;padding:12px 40px;font-size:15px;letter-spacing:.26em;
+  background:rgba(14,52,64,.85);border:1px solid rgba(130,225,240,.45);
+  color:#dcf6fb;border-radius:2px;cursor:pointer;transition:.28s;font-family:inherit;
+}
+#renameBox button:hover{background:rgba(24,84,102,.95);color:#fff;}
+
+/* ==================== 全屏 CG ==================== */
+#cgLayer{
+  position:absolute;inset:0;z-index:88;display:none;flex-direction:column;
+  align-items:center;justify-content:center;background:rgba(2,5,9,.96);padding:24px;
+}
+#cgLayer.on{display:flex;}
+#cgImg{max-width:min(1000px,94%);max-height:70vh;border-radius:3px;box-shadow:0 20px 70px rgba(0,0,0,.8);}
+#cgCap{margin-top:18px;font-size:14px;letter-spacing:.16em;color:rgba(210,235,245,.8);text-align:center;line-height:1.9;}
+#cgClose{
+  margin-top:20px;padding:10px 34px;font-size:14px;letter-spacing:.22em;font-family:inherit;
+  background:rgba(12,40,50,.9);border:1px solid rgba(130,225,240,.4);color:#dcf6fb;
+  border-radius:2px;cursor:pointer;transition:.25s;
+}
+#cgClose:hover{background:rgba(24,80,98,.95);}
+
+/* ==================== 标题屏 ==================== */
+#titleScreen{
+  position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;background-size:cover;background-position:center;
+  transition:opacity .8s;
+}
+#titleScreen::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg, rgba(3,8,13,.72), rgba(3,8,13,.86));}
+#titleScreen.off{opacity:0;pointer-events:none;}
+#titleScreen>*{position:relative;z-index:2;}
+.tTitle{font-size:70px;letter-spacing:.4em;font-weight:400;padding-left:.4em;
+  background:linear-gradient(180deg,#eafaff,#7fc8dd);-webkit-background-clip:text;background-clip:text;color:transparent;}
+.tSub{font-size:11px;letter-spacing:.5em;color:rgba(150,215,230,.55);margin-top:14px;padding-left:.5em;}
+.tMenu{display:flex;flex-direction:column;gap:13px;margin-top:46px;}
+.tBtn{
+  width:288px;padding:14px 0;font-size:15px;letter-spacing:.2em;font-family:inherit;
+  background:rgba(8,20,28,.72);border:1px solid rgba(120,205,225,.28);color:#d5eaf1;
+  border-radius:2px;cursor:pointer;transition:.28s;text-align:center;
+}
+.tBtn:hover{background:rgba(18,52,66,.9);border-color:rgba(150,235,250,.65);color:#fff;letter-spacing:.26em;}
+.tBtn.dim{opacity:.42;cursor:not-allowed;}
+.tBtn .sm{display:block;font-size:10px;letter-spacing:.14em;color:rgba(150,215,230,.5);margin-top:4px;}
+.tFoot{position:absolute;bottom:26px;font-size:11px;letter-spacing:.16em;color:rgba(150,205,220,.4);text-align:center;line-height:2;}
+
+/* ==================== 图鉴 ==================== */
+#gallery{
+  position:absolute;inset:0;z-index:90;display:none;flex-direction:column;
+  padding:74px 40px 34px;background:rgba(2,6,11,.95);overflow-y:auto;
+}
+#gallery.on{display:flex;}
+.gTitle{font-size:22px;letter-spacing:.24em;color:#dff2f8;text-align:center;}
+.gDesc{font-size:12px;letter-spacing:.1em;color:rgba(150,210,225,.6);text-align:center;margin-top:10px;margin-bottom:24px;}
+.gGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;max-width:1080px;margin:0 auto;width:100%;}
+.gCard{
+  padding:18px 20px;border-radius:3px;border:1px solid rgba(120,190,215,.2);
+  background:linear-gradient(180deg, rgba(8,20,28,.85), rgba(4,12,18,.9));
+  transition:.3s;
+}
+.gCard.unlocked{border-color:rgba(130,225,240,.5);box-shadow:0 0 22px rgba(60,200,225,.1);}
+.gCard.locked{opacity:.62;}
+.gCard .gI{font-size:26px;margin-bottom:8px;}
+.gCard .gT{font-size:15px;letter-spacing:.1em;color:#e2f2f8;margin-bottom:5px;}
+.gCard .gSub{font-size:10px;letter-spacing:.22em;color:rgba(130,215,235,.6);margin-bottom:9px;}
+.gCard .gSeal{font-size:13px;line-height:1.8;color:rgba(200,225,238,.78);}
+.gCard .gHint{font-size:11px;line-height:1.7;color:rgba(150,205,220,.5);margin-top:8px;padding-top:8px;border-top:1px dashed rgba(120,190,215,.18);}
+.gClose{
+  position:absolute;top:22px;right:30px;padding:9px 20px;font-size:13px;letter-spacing:.18em;font-family:inherit;
+  background:rgba(8,20,28,.85);border:1px solid rgba(120,205,225,.3);color:#d5eaf1;border-radius:2px;cursor:pointer;
+}
+.gClose:hover{background:rgba(18,52,66,.95);color:#fff;}
+
+/* ==================== 结局屏 ==================== */
+#endingScreen{
+  position:absolute;inset:0;z-index:92;display:none;flex-direction:column;
+  align-items:center;justify-content:center;background:rgba(2,5,10,.96);padding:30px 24px;
+}
+#endingScreen.on{display:flex;}
+.eIcon{font-size:46px;margin-bottom:12px;}
+.eSub{font-size:11px;letter-spacing:.36em;color:rgba(140,215,235,.6);padding-left:.36em;}
+.eTitle{font-size:clamp(24px,4.6vw,40px);letter-spacing:.1em;margin:16px 0 22px;text-align:center;}
+.eSeal{font-size:16px;line-height:1.95;color:rgba(215,235,245,.85);padding:20px 26px;
+  border-left:1px solid rgba(130,220,240,.35);border-right:1px solid rgba(130,220,240,.35);
+  margin-bottom:28px;max-width:640px;text-align:center;}
+.eBtns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;}
+.eBtn{
+  padding:12px 26px;font-size:13px;letter-spacing:.16em;font-family:inherit;
+  background:rgba(8,20,28,.85);border:1px solid rgba(120,205,225,.3);color:#d5eaf1;
+  border-radius:2px;cursor:pointer;transition:.25s;
+}
+.eBtn:hover{background:rgba(18,52,66,.95);color:#fff;border-color:rgba(150,235,250,.6);}
+
+/* ==================== 杂项 ==================== */
+#flashWhite{position:absolute;inset:0;z-index:96;background:#dff6ff;opacity:0;pointer-events:none;transition:opacity .2s;}
+#flashWhite.on{opacity:.9;}
+#toast{
+  position:absolute;top:76px;left:50%;transform:translateX(-50%) translateY(-26px);z-index:97;
+  padding:12px 26px;font-size:13px;letter-spacing:.18em;
+  background:linear-gradient(180deg, rgba(12,48,60,.96), rgba(6,26,34,.96));
+  border:1px solid rgba(130,225,240,.5);border-radius:2px;color:#dcf6fb;
+  opacity:0;transition:.5s;white-space:nowrap;
+}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0);}
+@keyframes shakeK{0%,100%{transform:translateX(0);}20%{transform:translateX(-9px);}40%{transform:translateX(8px);}60%{transform:translateX(-6px);}80%{transform:translateX(4px);}}
+.shake{animation:shakeK .5s;}
+
+/* ==================== 移动端 ==================== */
+@media (max-width:820px){
+  .tTitle{font-size:13vw;letter-spacing:.2em;padding-left:.2em;margin-right:-.2em;text-align:center;}
+  .tSub{font-size:9px;letter-spacing:.3em;padding-left:0;margin-right:-.3em;text-align:center;margin-top:10px;}
+  .tMenu{margin-top:34px;gap:11px;align-items:center;}
+  .tBtn{width:min(78vw,310px);padding:14px 0;font-size:15px;}
+  .tFoot{font-size:10px;bottom:16px;padding:0 16px;line-height:1.9;}
+
+  #sceneTag{top:calc(12px + env(safe-area-inset-top,0px));left:12px;font-size:11px;letter-spacing:.18em;padding:5px 10px;}
+  #hud{top:calc(12px + env(safe-area-inset-top,0px));right:12px;gap:6px;}
+  .hudBtn{padding:7px 10px;font-size:11px;letter-spacing:.06em;}
+
+  .sprite{height:70%;right:-6%;}
+
+  #sysPanel{
+    left:12px;top:calc(52px + env(safe-area-inset-top,0px));bottom:auto;width:150px;
+    padding:10px 11px 11px;
+  }
+  #sysPanel .ph{font-size:9px;margin-bottom:7px;padding-bottom:5px;}
+  #sysPanel .ph b{font-size:12px;}
+  #sysPanel .note{display:none;}
+  .srow{margin-bottom:6px;}
+  .srow .lb{font-size:10px;letter-spacing:.1em;}
+
+  #dialogue{padding:20px 18px 28px;padding-top:22px;bottom:calc(12px + env(safe-area-inset-bottom,0px));width:94%;}
+  #speaker{left:14px;font-size:12px;padding:5px 13px;letter-spacing:.14em;top:-12px;}
+  #text{font-size:15px;line-height:1.88;min-height:62px;letter-spacing:.02em;}
+  #text.sysline{font-size:13px;letter-spacing:.1em;}
+  #nextHint{right:14px;bottom:8px;font-size:10px;}
+
+  #choices{padding:16px;gap:11px;justify-content:flex-end;padding-bottom:17vh;}
+  .choice{width:100%;padding:14px 16px;font-size:14px;letter-spacing:.02em;}
+  .choice:hover{transform:none;}
+  .choice .tip{font-size:10px;}
+
+  #chapterCard .ccNum{font-size:11px;letter-spacing:.36em;}
+  #chapterCard .ccTitle{font-size:7vw;letter-spacing:.1em;}
+  #chapterCard .ccLine{width:80px;margin-top:16px;}
+
+  #sysbox{width:92%;padding:22px 20px 20px;}
+  #sysbox .sbBody{font-size:14px;line-height:1.85;}
+  #sysbox .sbHead{font-size:10px;letter-spacing:.18em;margin-bottom:14px;}
+
+  #gallery{padding:64px 16px 26px;}
+  .gGrid{grid-template-columns:1fr;gap:11px;}
+  .gCard{padding:15px 16px;}
+  .gClose{top:16px;right:14px;padding:8px 16px;font-size:12px;}
+
+  #endingScreen{padding:24px 18px;}
+  .eSeal{font-size:14px;padding:16px 12px;max-width:100%;}
+  .eBtns{gap:9px;width:100%;}
+  .eBtn{flex:1;min-width:96px;padding:12px 8px;font-size:12px;letter-spacing:.08em;}
+
+  #cgLayer{padding:16px 12px;overflow-y:auto;}
+  #cgImg{max-height:56vh;}
+  #cgCap{font-size:12px;}
+
+  #renameBox input{width:78vw;max-width:300px;font-size:18px;}
+  #toast{top:58px;font-size:11px;letter-spacing:.08em;padding:9px 16px;max-width:92vw;white-space:normal;text-align:center;}
+}
+@media (max-width:390px){
+  #text{font-size:14px;}
+  .sprite{height:64%;}
+  .tTitle{font-size:15vw;}
+  #sysPanel{width:132px;}
+}
+@media (max-height:480px) and (orientation:landscape){
+  .sprite{height:96%;}
+  #dialogue{bottom:8px;padding:15px 20px 20px;padding-top:17px;}
+  #text{font-size:14px;line-height:1.7;min-height:50px;}
+  #sysPanel{top:46px;bottom:auto;width:140px;}
+  #choices{justify-content:center;padding-bottom:14px;}
+  .choice{padding:11px 15px;font-size:13px;}
+}
+</style>
+</head>
+<body>
+<div id="app">
+<div id="stage">
+
+  <div id="bg"></div>
+  <div id="rainLayer"></div>
+  <div class="sprite" id="spAQ"></div>
+
+  <div id="sceneTag">明川</div>
+
+  <div id="hud">
+    <button class="hudBtn" id="btnAuto">自动</button>
+    <button class="hudBtn" id="btnSkip">快进</button>
+    <button class="hudBtn" id="btnGallery">图鉴</button>
+    <button class="hudBtn" id="btnTitle">标题</button>
+  </div>
+
+  <div id="sysPanel">
+    <div class="ph"><span>SYSTEM</span><b id="hVal">0</b></div>
+    <div class="srow"><div class="lb"><span>好 感</span><i id="hNum">0</i></div><div class="sbar h"><span id="barH"></span></div></div>
+    <div class="srow"><div class="lb"><span>信 任</span><i id="xNum">0</i></div><div class="sbar x"><span id="barX"></span></div></div>
+    <div class="srow"><div class="lb"><span>真 心</span><i id="zNum">0</i></div><div class="sbar z"><span id="barZ"></span></div></div>
+    <div class="note" id="sysNote">系统只看得见「好感」</div>
+  </div>
+
+  <div id="dialogue">
+    <div id="speaker" class="hide">艾青</div>
+    <div id="text"></div>
+    <div id="nextHint">▼ 点击继续</div>
+  </div>
+
+  <div id="choices"></div>
+
+  <div id="chapterCard">
+    <div class="ccNum"></div>
+    <div class="ccTitle"></div>
+    <div class="ccLine"></div>
+  </div>
+
+  <div id="bigText"><span></span></div>
+
+  <div id="sysboxLayer">
+    <div id="sysbox">
+      <div class="sbHead"><span class="sbDot"></span><span>SYSTEM MESSAGE</span></div>
+      <div class="sbBody"></div>
+      <div class="sbFoot">点击任意处继续 ▼</div>
+    </div>
+  </div>
+
+  <div id="renameBox">
+    <label>请为自己命名</label>
+    <input id="nameInput" type="text" maxlength="8" value="林予">
+    <button id="nameConfirm">进入明川</button>
+  </div>
+
+  <div id="cgLayer">
+    <img id="cgImg" alt="CG">
+    <div id="cgCap"></div>
+    <button id="cgClose">继续</button>
+  </div>
+
+  <div id="titleScreen">
+    <div class="tTitle">雨落无声</div>
+    <div class="tSub">RAIN HAS NO SOUND</div>
+    <div class="tMenu">
+      <button class="tBtn" id="tStart">开始新故事</button>
+      <button class="tBtn" id="tContinue">继续上次<span class="sm">读取存档</span></button>
+      <button class="tBtn" id="tGallery">结局档案<span class="sm">已解锁 <b id="tGalNum">0</b> / 5</span></button>
+    </div>
+    <div class="tFoot">
+      《明川·雨季》第二作 · 4 次升温 × 4 次降温<br>
+      好结局 1 · 坏结局 1 · 隐藏结局 2 · 全结局约 2 小时
+    </div>
+  </div>
+
+  <div id="gallery">
+    <div class="gTitle">结局档案</div>
+    <div class="gDesc">已解锁 <span id="galNum">0</span> / 5 —— 系统只看得见好感，但决定命运的不是它</div>
+    <div class="gGrid" id="galGrid"></div>
+    <button class="gClose" id="galClose">返回</button>
+  </div>
+
+  <div id="endingScreen">
+    <div class="eIcon" id="eIcon"></div>
+    <div class="eSub" id="eSub"></div>
+    <div class="eTitle" id="eTitle"></div>
+    <div class="eSeal" id="eSeal"></div>
+    <div class="eBtns">
+      <button class="eBtn" id="eAgain">再走一次</button>
+      <button class="eBtn" id="eGalleryBtn">查看档案</button>
+      <button class="eBtn" id="eTitleBtn">回到标题</button>
+    </div>
+  </div>
+
+  <div id="flashWhite"></div>
+  <div id="toast"></div>
+
+</div>
+</div>
+
+<script src="design/story_data.js"></script>
+<script>
+/* ============================================================
+   《雨落无声》引擎
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const stage = $("stage");
+const SERIES_PREFIX = "mingchuan_";          // 系列统一前缀，便于跨作品共享档案
+const SAVE_KEY = SERIES_PREFIX + "rain2_save_v1";
+const GAL_KEY  = SERIES_PREFIX + "rain2_gallery_v1";
+
+let S = {
+  H: 0, X: 0, Z: 0,
+  flags: {},
+  chapterIdx: 0,
+  queue: [],
+  mode: "idle",        // playing | choice | ending | wait | idle
+  auto: false, skip: false,
+  me: "林予",
+  started: false,
+  endingPending: null,
+  cgShown: false,
+  bigShown: false
+};
+
+/* ---------- 存档 ---------- */
+function saveGame(){
+  try{
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      H:S.H, X:S.X, Z:S.Z, flags:S.flags,
+      chapterIdx:S.chapterIdx, me:S.me, ts:Date.now()
+    }));
+  }catch(e){}
+}
+function loadGame(){
+  try{ const raw = localStorage.getItem(SAVE_KEY); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+function hasSave(){ return !!loadGame(); }
+function clearSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+function getGallery(){
+  try{ return JSON.parse(localStorage.getItem(GAL_KEY) || "{}"); }catch(e){ return {}; }
+}
+function unlockGallery(id){
+  const g = getGallery();
+  if(!g[id]){
+    g[id] = Date.now();
+    try{ localStorage.setItem(GAL_KEY, JSON.stringify(g)); }catch(e){}
+    toast("解锁新结局：「" + (ENDINGS[id].title || id) + "」");
+  }
+  renderGalleryNums();
+}
+function renderGalleryNums(){
+  const n = Object.keys(getGallery()).length;
+  const a = $("galNum"), b = $("tGalNum");
+  if(a) a.textContent = n;
+  if(b) b.textContent = n;
+}
+let toastTimer;
+function toast(msg){
+  const t = $("toast");
+  t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("on"), 2800);
+}
+
+/* ---------- 场景 ---------- */
+let rainTimer = null;
+function setScene(key){
+  const sc = SCENES[key]; if(!sc) return;
+  const bg = $("bg");
+  bg.style.backgroundImage = "url('" + sc.img + "')";
+  bg.classList.toggle("black", !!sc.black);
+  $("sceneTag").textContent = sc.name;
+
+  $("rainLayer").innerHTML = "";
+  clearInterval(rainTimer);
+  if(sc.dark && !sc.black){
+    $("rainLayer").classList.add("on");
+    for(let i=0;i<58;i++){
+      const d = document.createElement("div");
+      d.className = "drop";
+      d.style.left = (Math.random()*100) + "%";
+      d.style.top = "-14%";
+      d.style.height = (9 + Math.random()*15) + "%";
+      d.style.opacity = 0.25 + Math.random()*0.5;
+      d.style.animation = "fall " + (0.7 + Math.random()*0.9).toFixed(2) + "s linear infinite";
+      d.style.animationDelay = (-Math.random()*2).toFixed(2) + "s";
+      $("rainLayer").appendChild(d);
+    }
+  }else{
+    $("rainLayer").classList.remove("on");
+  }
+}
+
+/* ---------- 立绘 ---------- */
+const SPRITE_URLS = {
+  cold: SPRITES.cold.src, alarm: SPRITES.alarm.src, awkward: SPRITES.awkward.src,
+  soft: SPRITES.soft.src, teary: SPRITES.teary.src
+};
+function setSprite(which){
+  const el = $("spAQ");
+  if(!which || which === "none"){
+    el.classList.remove("on");
+    return;
+  }
+  el.style.backgroundImage = "url('" + (SPRITE_URLS[which] || SPRITE_URLS.cold) + "')";
+  el.classList.add("on");
+}
+
+/* ---------- 数值面板 ---------- */
+function updateHUD(){
+  const H = Math.max(0,Math.min(100,S.H)), X = Math.max(0,Math.min(100,S.X)), Z = Math.max(0,Math.min(100,S.Z));
+  $("barH").style.width = H + "%";
+  $("barX").style.width = X + "%";
+  $("barZ").style.width = Z + "%";
+  $("hNum").textContent = Math.round(H);
+  $("xNum").textContent = Math.round(X);
+  $("zNum").textContent = Math.round(Z);
+  $("hVal").textContent = Math.round(H) + "%";
+  const note = $("sysNote");
+  if(note){
+    note.textContent = S.flags.chose_human ? "你已经不需要它了" :
+                       S.flags.chose_system ? "它对当前进度很满意" :
+                       "系统只看得见「好感」";
+  }
+}
+
+/* ---------- 打字机 ---------- */
+let typeTimer = null, typing = false, fullText = "";
+function typeText(str, cls, cb){
+  const el = $("text");
+  el.className = cls || "";
+  fullText = str;
+  el.textContent = "";
+  typing = true;
+  let i = 0;
+  $("nextHint").style.opacity = 0;
+  clearInterval(typeTimer);
+  const speed = S.skip ? 6 : 26;
+  typeTimer = setInterval(()=>{
+    if(i >= str.length){
+      clearInterval(typeTimer); typing = false;
+      $("nextHint").style.opacity = 1;
+      if(cb) cb();
+      return;
+    }
+    el.textContent += str[i++];
+  }, speed);
+}
+function finishTyping(){
+  clearInterval(typeTimer);
+  $("text").textContent = fullText;
+  typing = false;
+  $("nextHint").style.opacity = 1;
+}
+
+/* ---------- 播放节点 ---------- */
+function subName(s){ return String(s).replace(/\{me\}/g, S.me); }
+
+function playNode(node){
+  if(!node) return;
+
+  if(node.t === "scene"){ setScene(node.s); return void advance(); }
+  if(node.t === "show"){ setSprite(node.char); return void advance(); }
+  if(node.t === "eff"){
+    if(node.s === "flash") flash();
+    if(node.s === "shake"){ stage.classList.add("shake"); setTimeout(()=>stage.classList.remove("shake"), 520); }
+    return void advance();
+  }
+  if(node.t === "cg"){ return void showCG(node.s); }
+  if(node.t === "big"){ return void showBig(node.s); }
+  if(node.t === "sysbox"){ return void showSysbox(node.s); }
+
+  $("dialogue").classList.add("on");
+  const spk = $("speaker");
+
+  if(node.t === "nar" || node.t === "think"){
+    spk.className = "hide";
+    typeText(subName(node.s), node.t === "nar" ? "narr" : "think");
+  }else if(node.t === "sys"){
+    spk.className = "hide";
+    typeText(subName(node.s), "sysline");
+  }else if(node.t === "say"){
+    const isAQ = node.who === "艾青";
+    spk.className = isAQ ? "aq" : "me";
+    spk.textContent = isAQ ? "艾青" : S.me;
+    const el = $("spAQ");
+    if(el.classList.contains("on")) el.classList.toggle("dim", !isAQ);
+    typeText(subName(node.s), "say");
+  }
+}
+
+/* 大字幕：自动停留后继续 */
+function showBig(txt){
+  const b = $("bigText");
+  b.querySelector("span").textContent = txt;
+  b.classList.add("on");
+  setTimeout(()=>{
+    b.classList.remove("on");
+    setTimeout(()=>advance(), 260);
+  }, 1500);
+}
+/* 系统弹窗：点击关闭 */
+function showSysbox(txt){
+  const l = $("sysboxLayer");
+  l.querySelector(".sbBody").textContent = txt;
+  l.classList.add("on");
+  l.onclick = ()=>{
+    l.classList.remove("on");
+    l.onclick = null;
+    advance();
+  };
+}
+/* 彩蛋 / 结局 CG */
+let cgReturn = null;
+function showCG(kind){
+  const layer = $("cgLayer");
+  if(kind === "kiss"){
+    $("cgImg").src = SPRITE_CG.kiss;
+    $("cgCap").innerHTML = "明川湖 · 雨后黄昏<br><span style='font-size:12px;color:rgba(180,215,230,.6)'>「不许笑。」</span>";
+    layer.classList.add("on");
+    const closeCG = ()=>{
+      layer.classList.remove("on");
+      const fn = cgReturn; cgReturn = null;
+      if(fn) fn(); else advance();
+    };
+    cgReturn = ()=>{
+      if(S.endingPending){ S.mode = "idle"; showEndingScreen(S.endingPending); }
+      else advance();
+    };
+    $("cgClose").onclick = closeCG;
+    layer.onclick = (e)=>{ if(e.target === layer) closeCG(); };
+  }else{
+    advance();
+  }
+}
+function flash(){
+  const f = $("flashWhite");
+  f.classList.add("on");
+  setTimeout(()=>f.classList.remove("on"), 180);
+}
+
+/* ---------- 唯一推进入口 ---------- */
+function advance(){
+  if(S.mode === "choice") return;
+  if(typing){ finishTyping(); return; }
+  if($("endingScreen").classList.contains("on")) return;
+  if($("cgLayer").classList.contains("on")) return;
+  if($("sysboxLayer").classList.contains("on")) return;
+  if($("bigText").classList.contains("on")) return;
+
+  if(S.queue.length > 0){
+    const node = S.queue.shift();
+    if(node && node.__chapterEnd){ onChapterEnd(); return; }
+    playNode(node);
+    return;
+  }
+
+  if(S.mode === "ending"){
+    S.mode = "idle";
+    if(S.endingPending && S.endingPending.cg && !S.cgShown){
+      S.cgShown = true;
+      showCG(S.endingPending.cg);
+      return;
+    }
+    showEndingScreen(S.endingPending);
+    return;
+  }
+  if(S.mode === "playing"){
+    const ch = CHAPTERS[S.chapterIdx];
+    if(ch.choices && ch.choices.length){
+      showChoices(ch.choices);
+    }else{
+      onChapterEnd();
+    }
+  }
+}
+
+/* ---------- 章节流程 ---------- */
+function startChapter(idx){
+  S.chapterIdx = idx;
+  S.mode = "playing";
+  const ch = CHAPTERS[idx];
+  setScene(ch.scene);
+  setSprite(ch.show || "none");
+  showChapterCard(ch, ()=>{
+    S.queue = ch.script.slice();
+    $("dialogue").classList.remove("on");
+    $("sysPanel").classList.add("on");
+    updateHUD();
+    advance();
+  });
+}
+function showChapterCard(ch, cb){
+  const cc = $("chapterCard");
+  cc.querySelector(".ccNum").textContent = ch.id === 0 ? "PROLOGUE" : "CHAPTER " + ch.id;
+  cc.querySelector(".ccTitle").textContent = ch.title;
+  cc.classList.add("on");
+  setTimeout(()=>{ cc.classList.remove("on"); if(cb) cb(); }, ch.id === 0 ? 2400 : 1800);
+}
+function onChapterEnd(){
+  saveGame();
+  if(S.chapterIdx < CHAPTERS.length - 1){
+    S.mode = "wait";
+    setTimeout(()=> startChapter(S.chapterIdx + 1), 780);
+  }else{
+    resolveEnding();
+  }
+}
+function showChoices(list){
+  S.mode = "choice";
+  const box = $("choices");
+  box.innerHTML = "";
+  list.forEach((c, i)=>{
+    const b = document.createElement("button");
+    b.className = "choice";
+    b.style.animationDelay = (i * 0.09) + "s";
+    b.innerHTML = "<span>" + subName(c.s) + "</span>" + (c.tip ? "<span class='tip'>" + c.tip + "</span>" : "");
+    b.onclick = ()=> pickChoice(c);
+    box.appendChild(b);
+  });
+  box.classList.add("on");
+}
+function pickChoice(c){
+  $("choices").classList.remove("on");
+  $("choices").innerHTML = "";
+  if(c.eff){
+    S.H = Math.max(0, Math.min(100, S.H + (c.eff.H || 0)));
+    S.X = Math.max(0, Math.min(100, S.X + (c.eff.X || 0)));
+    S.Z = Math.max(0, Math.min(100, S.Z + (c.eff.Z || 0)));
+  }
+  if(c.flag) S.flags[c.flag] = true;
+  if(c.sys === "obey") S.flags.sys_obey = (S.flags.sys_obey || 0) + 1;
+  if(c.sys === "defy") S.flags.sys_defy = (S.flags.sys_defy || 0) + 1;
+
+  updateHUD();
+  saveGame();
+
+  S.mode = "playing";
+  const thenNodes = (c.then || []).slice();
+  if(thenNodes.length){
+    S.queue = thenNodes.concat([{ __chapterEnd: true }]);
+    advance();
+  }else{
+    onChapterEnd();
+  }
+}
+
+/* ---------- 结局判定 ---------- */
+function resolveEnding(){
+  let chosen = null;
+  for(const id of PRIORITY){
+    const e = ENDINGS[id];
+    if(e && e.cond && e.cond(S, S.flags)){ chosen = e; break; }
+  }
+  if(!chosen) chosen = ENDINGS.normal;
+
+  S.endingPending = chosen;
+  unlockGallery(chosen.id);
+  clearSave();
+
+  S.mode = "ending";
+  S.queue = chosen.text.slice();
+  S.cgShown = false;
+  $("dialogue").classList.add("on");
+  $("sysPanel").classList.remove("on");
+  setSprite("none");
+  if(chosen.id === "transfer" || chosen.id === "normal") setScene("empty_room");
+  else if(chosen.id !== "good") setScene("lake");
+  setTimeout(()=> advance(), 600);
+}
+function showEndingScreen(e){
+  $("eIcon").textContent = e.icon || "•";
+  $("eSub").textContent = e.sub || "";
+  $("eTitle").textContent = e.title || "";
+  $("eTitle").style.color = e.color || "#e6f4f9";
+  $("eSeal").textContent = "「" + (e.seal || "") + "」";
+  $("endingScreen").classList.add("on");
+}
+
+/* ---------- 输入 ---------- */
+let _lastTap = 0;
+function handleAdvanceTap(ev){
+  if(ev.target.closest("#choices") || ev.target.closest("#hud") ||
+     ev.target.closest("#gallery") || ev.target.closest("#endingScreen") ||
+     ev.target.closest("#cgLayer") || ev.target.closest("#titleScreen") ||
+     ev.target.closest("#sysboxLayer") || ev.target.closest("#renameBox") ||
+     ev.target.closest(".hudBtn") || ev.target.closest(".tBtn") ||
+     ev.target.closest(".eBtn") || ev.target.closest(".gClose") ||
+     ev.target.closest("#cgClose") || ev.target.closest("input")) return;
+  const now = Date.now();
+  if(now - _lastTap < 60) return;
+  _lastTap = now;
+  advance();
+}
+stage.addEventListener("pointerup", handleAdvanceTap);
+/* 不要用 touchend+preventDefault 防缩放：会让所有按钮点不动。
+   缩放已由 touch-action:manipulation + viewport 控制。 */
+stage.addEventListener("contextmenu", e=>e.preventDefault());
+document.addEventListener("keydown", e=>{
+  if(e.target && e.target.tagName === "INPUT") return;
+  if(e.code === "Space" || e.code === "Enter"){
+    e.preventDefault();
+    if($("sysboxLayer").classList.contains("on")){ $("sysboxLayer").onclick && $("sysboxLayer").onclick(); return; }
+    if($("titleScreen").classList.contains("off") &&
+       !$("renameBox").classList.contains("on") &&
+       !$("cgLayer").classList.contains("on") &&
+       !$("choices").classList.contains("on") &&
+       !$("endingScreen").classList.contains("on")) advance();
+  }
+});
+
+/* ---------- 标题 / 开始 ---------- */
+function isTouchDevice(){ return ("ontouchstart" in window) || (navigator.maxTouchPoints > 0); }
+
+function toTitle(){
+  stopAutoSkip();
+  $("titleScreen").classList.remove("off");
+  $("endingScreen").classList.remove("on");
+  $("gallery").classList.remove("on");
+  $("cgLayer").classList.remove("on");
+  $("sysboxLayer").classList.remove("on");
+  $("bigText").classList.remove("on");
+  $("dialogue").classList.remove("on");
+  $("sysPanel").classList.remove("on");
+  $("choices").classList.remove("on");
+  $("tContinue").classList.toggle("dim", !hasSave());
+  renderGalleryNums();
+  setSprite("none");
+  setScene("campus");
+}
+function newGame(){
+  stopAutoSkip();
+  S = { H:0, X:0, Z:0, flags:{}, chapterIdx:0, queue:[], mode:"idle",
+        auto:false, skip:false, me:"林予", started:true,
+        endingPending:null, cgShown:false, bigShown:false };
+  setScene(CHAPTERS[0].scene);
+  setSprite("none");
+  $("dialogue").classList.remove("on");
+  $("sysPanel").classList.remove("on");
+  $("titleScreen").classList.add("off");
+  $("endingScreen").classList.remove("on");
+  $("gallery").classList.remove("on");
+  $("renameBox").classList.add("on");
+  $("nameInput").value = "林予";
+  // 移动端不自动 focus（iOS 从 display:none 切换后同步 focus 不会唤起键盘）
+  if(!isTouchDevice()){
+    setTimeout(()=>{ try{ $("nameInput").focus(); $("nameInput").select(); }catch(e){} }, 60);
+  }
+}
+function beginAfterRename(){
+  const v = ($("nameInput").value || "").trim() || "林予";
+  S.me = v;
+  $("renameBox").classList.remove("on");
+  saveGame();
+  startChapter(0);
+}
+function continueGame(){
+  stopAutoSkip();
+  const s = loadGame();
+  if(!s){ toast("没有找到存档"); return; }
+  S.H = s.H || 0; S.X = s.X || 0; S.Z = s.Z || 0; S.flags = s.flags || {};
+  S.chapterIdx = s.chapterIdx || 0; S.me = s.me || "林予";
+  S.endingPending = null; S.mode = "idle"; S.queue = [];
+  $("titleScreen").classList.add("off");
+  $("endingScreen").classList.remove("on");
+  startChapter(S.chapterIdx);
+}
+
+$("tStart").onclick = newGame;
+$("tContinue").onclick = continueGame;
+$("nameConfirm").onclick = beginAfterRename;
+$("nameInput").onkeydown = e=>{ if(e.key === "Enter") beginAfterRename(); };
+
+$("btnGallery").onclick = ()=>openGallery();
+$("tGallery").onclick = ()=>openGallery();
+$("eGalleryBtn").onclick = ()=>openGallery();
+$("galClose").onclick = ()=>{ $("gallery").classList.remove("on"); };
+$("btnTitle").onclick = ()=>toTitle();
+$("eTitleBtn").onclick = ()=>toTitle();
+$("eAgain").onclick = ()=>{ $("endingScreen").classList.remove("on"); newGame(); };
+
+/* ---------- 自动 / 快进 ---------- */
+let autoTimer2 = null, skipTimer = null;
+function stopAutoSkip(){
+  clearInterval(autoTimer2); autoTimer2 = null;
+  clearInterval(skipTimer);  skipTimer  = null;
+  if(typeof S !== "undefined" && S){ S.auto = false; S.skip = false; }
+  const ba = $("btnAuto"), bs = $("btnSkip");
+  if(ba) ba.classList.remove("active");
+  if(bs) bs.classList.remove("active");
+}
+function autoLoop(){
+  clearInterval(autoTimer2);
+  if(!S.auto) return;
+  autoTimer2 = setInterval(()=>{
+    if(S.mode !== "playing" && S.mode !== "ending") return;
+    if($("choices").classList.contains("on")) return;
+    if($("endingScreen").classList.contains("on")) return;
+    if($("gallery").classList.contains("on")) return;
+    if($("sysboxLayer").classList.contains("on")) return;
+    if($("bigText").classList.contains("on")) return;
+    if($("cgLayer").classList.contains("on")) return;
+    if(typing) return;
+    advance();
+  }, 1500);
+}
+function skipLoop(){
+  clearInterval(skipTimer);
+  if(!S.skip) return;
+  skipTimer = setInterval(()=>{
+    if(S.mode === "choice"){ S.skip = false; $("btnSkip").classList.remove("active"); clearInterval(skipTimer); return; }
+    if($("endingScreen").classList.contains("on")){ clearInterval(skipTimer); return; }
+    if($("gallery").classList.contains("on")) return;
+    if($("cgLayer").classList.contains("on")) return;
+    if($("sysboxLayer").classList.contains("on")) return;
+    if($("bigText").classList.contains("on")) return;
+    if(typing){ finishTyping(); return; }
+    advance();
+  }, 100);
+}
+$("btnAuto").onclick = function(){
+  if($("endingScreen").classList.contains("on") || $("gallery").classList.contains("on")) return;
+  S.auto = !S.auto; this.classList.toggle("active", S.auto);
+  if(S.auto) autoLoop(); else clearInterval(autoTimer2);
+};
+$("btnSkip").onclick = function(){
+  if($("endingScreen").classList.contains("on") || $("gallery").classList.contains("on")) return;
+  S.skip = !S.skip; this.classList.toggle("active", S.skip);
+  if(S.skip) skipLoop(); else clearInterval(skipTimer);
+};
+
+/* ---------- 图鉴 ---------- */
+function openGallery(){
+  $("gallery").classList.add("on");
+  const g = getGallery();
+  const grid = $("galGrid");
+  grid.innerHTML = "";
+  const order = (typeof ENDING_ORDER !== "undefined") ? ENDING_ORDER : Object.keys(ENDINGS);
+  order.forEach(id=>{
+    const e = ENDINGS[id];
+    if(!e) return;
+    const got = !!g[id];
+    const card = document.createElement("div");
+    card.className = "gCard " + (got ? "unlocked" : "locked");
+    card.innerHTML = got
+      ? "<div class='gI'>" + (e.icon || "•") + "</div><div class='gT'>" + e.title + "</div>" +
+        "<div class='gSub'>" + (e.sub || "") + "</div><div class='gSeal'>「" + (e.seal || "") + "」</div>"
+      : "<div class='gI'>🔒</div><div class='gT'>？？？</div>" +
+        "<div class='gSub'>" + (e.sub || "") + "</div><div class='gSeal'>尚未解锁</div>" +
+        (e.hint ? "<div class='gHint'>解锁提示： " + e.hint + "</div>" : "");
+    grid.appendChild(card);
+  });
+  renderGalleryNums();
+}
+
+/* ---------- 初始化 ---------- */
+stage.insertAdjacentHTML("beforeend", "<style>@keyframes fall{from{transform:translateY(-10%);}to{transform:translateY(760%);}}</style>");
+setScene("campus");
+setSprite("none");
+toTitle();
+</script>
+</body>
+</html>

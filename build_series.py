@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+《明川·雨季》系列打包器
+把两作各自打包成单文件 HTML，并生成 Hub 入口页，统一输出到 dist_series/。
+
+  雨落有声.html  + design/story_data.js + assets/*  ->  rain1.html
+  new/雨落无声.html + new/design/story_data.js + new/assets/* -> rain2.html
+  Hub 入口页（含世界线档案、明川地图、跨作品彩蛋） -> index.html
+
+用法: python build_series.py
+"""
+import base64, mimetypes, os, re, shutil
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+OUT_DIR = os.path.join(ROOT, "dist_series")
+
+GAMES = [
+    {
+        "key": "rain1",
+        "name": "《雨落有声》",
+        "src_html": os.path.join(ROOT, "雨落有声.html"),
+        "src_data": os.path.join(ROOT, "design", "story_data.js"),
+        "base": ROOT,
+        "out": "rain1.html",
+    },
+    {
+        "key": "rain2",
+        "name": "《雨落无声》",
+        "src_html": os.path.join(ROOT, "new", "雨落无声.html"),
+        "src_data": os.path.join(ROOT, "new", "design", "story_data.js"),
+        "base": os.path.join(ROOT, "new"),
+        "out": "rain2.html",
+    },
+]
+
+ASSET_RE = re.compile(r"""(['"])(assets/[A-Za-z0-9_./\-]+\.(?:png|jpg|jpeg|webp))\1""")
+
+
+def data_uri(base, rel):
+    p = os.path.join(base, rel.replace("/", os.sep))
+    if not os.path.exists(p):
+        raise FileNotFoundError("资源缺失: " + p)
+    mime, _ = mimetypes.guess_type(p)
+    if mime is None:
+        ext = os.path.splitext(p)[1].lower()
+        mime = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                ".webp": "image/webp"}.get(ext, "application/octet-stream")
+    with open(p, "rb") as f:
+        return "data:%s;base64,%s" % (mime, base64.b64encode(f.read()).decode("ascii"))
+
+
+def build_one(g):
+    with open(g["src_html"], encoding="utf-8") as f:
+        html = f.read()
+    with open(g["src_data"], encoding="utf-8") as f:
+        data = f.read()
+
+    tag_re = re.compile(r'<script\s+src="[^"]*story_data\.js"\s*>\s*</script>')
+    if not tag_re.search(html):
+        raise RuntimeError("找不到 story_data.js 的 script 标签: " + g["src_html"])
+    html = tag_re.sub("<script>\n" + data + "\n</script>", html, count=1)
+
+    cache = {}
+
+    def repl(m):
+        quote, rel = m.group(1), m.group(2)
+        if rel not in cache:
+            cache[rel] = data_uri(g["base"], rel)
+        return quote + cache[rel] + quote
+
+    html = ASSET_RE.sub(repl, html)
+
+    left = html.count("assets/")
+    os.makedirs(OUT_DIR, exist_ok=True)
+    dst = os.path.join(OUT_DIR, g["out"])
+    with open(dst, "w", encoding="utf-8") as f:
+        f.write(html)
+    print("  %-14s -> %s  (内联 %d 张图, 残留 assets/ %d, %.2f MB)"
+          % (g["name"], g["out"], len(cache), left, os.path.getsize(dst) / 1048576))
+    if left:
+        raise RuntimeError("仍有未内联的资源引用: " + g["out"])
+    return dst
+
+
+HUB = r"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05080d">
+<title>明川·雨季 · 系列入口</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{min-height:100%;background:#05080d;}
+body{
+  font-family:"Songti SC","STSong","SimSun","Noto Serif SC",Georgia,serif;
+  color:#dfeaf2;-webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% -10%, rgba(40,90,120,.28), transparent 70%),
+    radial-gradient(ellipse 70% 50% at 50% 110%, rgba(30,60,90,.24), transparent 70%),
+    #05080d;
+  min-height:100dvh;padding:52px 22px 60px;
+}
+.wrap{max-width:1040px;margin:0 auto;}
+.hd{text-align:center;margin-bottom:44px;}
+.hd h1{font-size:clamp(30px,5.4vw,46px);letter-spacing:.34em;font-weight:400;padding-left:.34em;
+  background:linear-gradient(180deg,#eaf7fc,#7fbcd4);-webkit-background-clip:text;background-clip:text;color:transparent;}
+.hd .sub{font-size:11px;letter-spacing:.5em;color:rgba(140,205,225,.5);margin-top:14px;padding-left:.5em;}
+.hd .tag{font-size:13px;line-height:1.9;color:rgba(180,215,230,.62);margin-top:18px;letter-spacing:.06em;}
+.secT{font-size:13px;letter-spacing:.3em;color:rgba(130,205,225,.62);margin:38px 0 16px;padding-left:.3em;
+  border-left:2px solid rgba(110,200,225,.5);}
+.works{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;}
+.work{
+  display:block;text-decoration:none;color:inherit;position:relative;overflow:hidden;
+  border:1px solid rgba(110,185,215,.24);border-radius:5px;padding:24px 22px;
+  background:linear-gradient(180deg, rgba(9,20,30,.86), rgba(4,11,17,.92));
+  transition:.3s;
+}
+.work:hover{border-color:rgba(130,225,245,.6);transform:translateY(-3px);
+  box-shadow:0 14px 44px rgba(0,0,0,.5), 0 0 0 1px rgba(130,225,245,.14) inset;}
+.work .no{font-size:10px;letter-spacing:.34em;color:rgba(120,205,230,.55);}
+.work .nm{font-size:22px;letter-spacing:.16em;margin:9px 0 6px;color:#e6f5fa;}
+.work .pr{font-size:12px;letter-spacing:.1em;color:rgba(170,210,228,.6);}
+.work .st{margin-top:15px;font-size:11px;letter-spacing:.14em;color:rgba(130,225,240,.7);}
+.work .st b{color:#8fe6f5;font-weight:400;}
+.work.pending{opacity:.55;}
+.work.pending .st{color:rgba(150,180,195,.5);}
+.map{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:11px;}
+.spot{
+  border:1px solid rgba(110,185,215,.2);border-radius:4px;padding:14px 15px;
+  background:rgba(8,18,27,.7);cursor:pointer;transition:.25s;
+}
+.spot:hover{border-color:rgba(130,225,245,.5);background:rgba(14,32,45,.85);}
+.spot .sn{font-size:14px;color:#dff0f7;letter-spacing:.1em;margin-bottom:6px;}
+.spot .sd{font-size:11.5px;line-height:1.75;color:rgba(160,200,218,.62);}
+.spot .sb{margin-top:7px;font-size:10px;letter-spacing:.16em;color:rgba(130,225,240,.55);}
+.gal{display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));gap:10px;}
+.gc{border:1px solid rgba(110,185,215,.18);border-radius:4px;padding:12px 13px;background:rgba(7,16,24,.72);}
+.gc.on{border-color:rgba(130,225,240,.5);background:rgba(12,28,40,.85);box-shadow:0 0 18px rgba(60,200,225,.1);}
+.gc .gi{font-size:18px;margin-bottom:5px;}
+.gc .gt{font-size:12.5px;color:#dceef6;letter-spacing:.06em;line-height:1.5;}
+.gc .gs{font-size:9.5px;letter-spacing:.16em;color:rgba(120,200,225,.5);margin-top:4px;}
+.gc.lk{opacity:.5;}
+.gc.lk .gt{color:rgba(170,195,210,.6);}
+.bar{display:flex;align-items:center;gap:14px;margin-top:16px;flex-wrap:wrap;}
+.bar .cnt{font-size:13px;letter-spacing:.1em;color:rgba(160,205,222,.7);}
+.bar .cnt b{color:#8fe6f5;font-weight:400;}
+.bar button{
+  padding:9px 18px;font-size:12px;letter-spacing:.16em;font-family:inherit;
+  background:rgba(9,22,31,.85);border:1px solid rgba(120,205,225,.3);color:#cfe6ef;
+  border-radius:2px;cursor:pointer;transition:.25s;
+}
+.bar button:hover{background:rgba(18,50,66,.95);color:#fff;}
+.ft{margin-top:46px;padding-top:20px;border-top:1px solid rgba(110,185,215,.14);
+  font-size:11px;line-height:2;color:rgba(140,185,205,.45);text-align:center;letter-spacing:.1em;}
+.note{font-size:12px;line-height:1.9;color:rgba(160,200,218,.55);margin-top:14px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <h1>明川·雨季</h1>
+    <div class="sub">MINGCHUAN &middot; RAIN SEASON</div>
+    <div class="tag">同一座明川，同一场雨，两段人生。<br>每一作都可以单独玩，彩蛋会在另一作里亮起来。</div>
+  </div>
+
+  <div class="secT">作品</div>
+  <div class="works">
+    <a class="work" href="rain1.html">
+      <div class="no">第一作</div>
+      <div class="nm">雨落有声</div>
+      <div class="pr">沈知微 &times; 江砚 &nbsp;|&nbsp; 建筑系 &middot; 体育系</div>
+      <div class="st">已上线 &middot; <b>7</b> 个结局 &middot; 约 90 分钟</div>
+    </a>
+    <a class="work" href="rain2.html">
+      <div class="no">第二作</div>
+      <div class="nm">雨落无声</div>
+      <div class="pr">艾青 &times; 你 &nbsp;|&nbsp; 水利系 &middot; 死过一次的人</div>
+      <div class="st">新作 &middot; <b>5</b> 个结局 &middot; 约 2 小时</div>
+    </a>
+  </div>
+
+  <div class="secT">明川地图</div>
+  <div class="map" id="map"></div>
+
+  <div class="secT">世界线档案</div>
+  <div class="gal" id="gal"></div>
+  <div class="bar">
+    <span class="cnt">已收集 <b id="cnt">0</b> / 12 个结局</span>
+    <button onclick="location.reload()">刷新</button>
+  </div>
+  <div class="note" id="hint"></div>
+
+  <div class="ft">
+    《明川·雨季》系列 &middot; 第一作《雨落有声》+ 第二作《雨落无声》<br>
+    第三作 &middot; 预留
+  </div>
+</div>
+
+<script>
+var G1 = { key:"rainvoice_gallery_v1", list:[
+  {id:"main",  icon:"☔", title:"有声",       sub:"MAIN ENDING"},
+  {id:"midway",icon:"🚶", title:"同行",       sub:"NORMAL ENDING"},
+  {id:"echo",  icon:"🔊", title:"回声",       sub:"HIDDEN ①"},
+  {id:"leaves",icon:"🍂", title:"梧桐不落叶", sub:"HIDDEN ②"},
+  {id:"just_rain",icon:"🌧", title:"一场雨的事", sub:"HIDDEN ③"},
+  {id:"farewell",icon:"🚪", title:"他先说了再见", sub:"HIDDEN ④"},
+  {id:"bonus", icon:"📷", title:"那年雨中",   sub:"HIDDEN ⑤"}
+]};
+var G2 = { key:"mingchuan_rain2_gallery_v1", list:[
+  {id:"good",    icon:"🌧", title:"雨落有声",     sub:"GOOD ENDING"},
+  {id:"transfer",icon:"🚉", title:"转学",         sub:"BAD ENDING"},
+  {id:"archive", icon:"🗂", title:"他不是第一个", sub:"HIDDEN ①"},
+  {id:"others",  icon:"◍", title:"另外三个人",   sub:"HIDDEN ②"},
+  {id:"normal",  icon:"☂", title:"各自的天晴",   sub:"NORMAL ENDING"}
+]};
+
+var MAP = [
+  {n:"梧桐大道",     d:"第一作开场。她抱着一卷图纸走过，脚步很快。",     b:"两作共享"},
+  {n:"西门旧球场",   d:"雨中投篮的男生 &times; 躲雨的女生。二作会路过这里。", b:"两作共享 &middot; 彩蛋"},
+  {n:"第一食堂",     d:"二作：她用脚踢出对面的椅子。",                  b:"两作共享"},
+  {n:"建筑系馆",     d:"第一作：全校最后一盏熄灭的灯。",                b:"第一作"},
+  {n:"水利系馆天台", d:"二作：一个人蹲在雨里，守着一张被淋湿的管网图。", b:"第二作"},
+  {n:"明川湖",       d:"二作：水面像镜子，好结局在这里发生。",          b:"第二作"},
+  {n:"明川之眼",     d:"二作：摩天轮最高点，她第一次主动靠过来。",      b:"第二作"},
+  {n:"系馆天台",     d:"第一作：生日那天没有人来。",                    b:"第一作"}
+];
+
+function readGal(cfg){
+  var out = {};
+  try{ out = JSON.parse(localStorage.getItem(cfg.key) || "{}") || {}; }catch(e){ out = {}; }
+  return out;
+}
+function draw(){
+  var m = document.getElementById("map");
+  m.innerHTML = MAP.map(function(s){
+    return "<div class='spot'><div class='sn'>" + s.n + "</div><div class='sd'>" + s.d + "</div><div class='sb'>" + s.b + "</div></div>";
+  }).join("");
+
+  var g1 = readGal(G1), g2 = readGal(G2);
+  var html = "", n = 0;
+  G1.list.forEach(function(e){
+    var got = !!g1[e.id]; if(got) n++;
+    html += "<div class='gc " + (got ? "on" : "lk") + "'><div class='gi'>" + (got ? e.icon : "🔒") +
+      "</div><div class='gt'>" + (got ? e.title : "？？？") + "</div><div class='gs'>" + e.sub +
+      " &middot; 雨落有声</div></div>";
+  });
+  G2.list.forEach(function(e){
+    var got = !!g2[e.id]; if(got) n++;
+    html += "<div class='gc " + (got ? "on" : "lk") + "'><div class='gi'>" + (got ? e.icon : "🔒") +
+      "</div><div class='gt'>" + (got ? e.title : "？？？") + "</div><div class='gs'>" + e.sub +
+      " &middot; 雨落无声</div></div>";
+  });
+  document.getElementById("gal").innerHTML = html;
+  document.getElementById("cnt").textContent = n;
+
+  var h = document.getElementById("hint");
+  var all = 12, cross = false;
+  try{
+    var c1 = localStorage.getItem("rainvoice_gallery_v1") || "{}";
+    var c2 = localStorage.getItem("mingchuan_rain2_gallery_v1") || "{}";
+    cross = Object.keys(JSON.parse(c1)).length >= 5 && Object.keys(JSON.parse(c2)).length >= 3;
+  }catch(e){}
+  if(n === 0) h.textContent = "还没有任何记录。进任意一作走完一条线，档案就会亮起来。";
+  else if(n >= all) h.textContent = "全部收齐了。她把每一场雨都走完了。";
+  else if(cross) h.textContent = "跨作品彩蛋已解锁：两个故事在同一场雨里对上了。";
+  else h.textContent = "继续走下去，其余结局会自己现身。";
+}
+draw();
+</script>
+</body>
+</html>
+"""
+
+
+def build_hub():
+    os.makedirs(OUT_DIR, exist_ok=True)
+    dst = os.path.join(OUT_DIR, "index.html")
+    with open(dst, "w", encoding="utf-8") as f:
+        f.write(HUB)
+    print("  %-14s -> index.html  (%.1f KB)" % ("Hub 入口", os.path.getsize(dst) / 1024))
+
+
+def main():
+    print("打包《明川·雨季》系列 →", OUT_DIR)
+    for g in GAMES:
+        build_one(g)
+    build_hub()
+    print("完成。")
+
+
+if __name__ == "__main__":
+    main()

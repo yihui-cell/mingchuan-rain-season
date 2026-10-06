@@ -1,0 +1,23 @@
+# ===== 系统 / 编辑器 =====
+.DS_Store
+Thumbs.db
+desktop.ini
+__pycache__/
+*.pyc
+
+# ===== 私有工作区数据（不上传）=====
+.workbuddy/
+.wbapp_*.genie
+
+# ===== 原始个人素材（不上传）=====
+# AI 生图的未处理原图、用户上传的原照片
+_raw/
+微信图片_*.jpg
+
+# ===== 测试/校验用拼图 =====
+_sheet_*.png
+_verify_*.png
+
+# ===== 可由构建脚本重新生成的产物 =====
+# （dist_series/ 里的成品保留，方便直接下载试玩）
+dist/
