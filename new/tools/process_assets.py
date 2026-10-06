@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
-"""处理 new/assets 下 AI 生成的图：重命名、裁水印、立绘抠透明底。"""
+"""处理 new/assets 下 AI 生成的图：重命名、裁水印、立绘抠透明底。
+
+路径以脚本自身位置为基准，整个项目可以随便挪盘/挪目录。
+"""
 import os, shutil
 from collections import deque
 from PIL import Image
 
-D = r"C:\Users\25045\Desktop\glg\new\assets"
+# 本文件在 <项目>/new/tools/ 下，素材目录是同级往上两层的 new/assets
+_HERE = os.path.dirname(os.path.abspath(__file__))
+D = os.path.join(os.path.dirname(_HERE), "assets")
 RAW = os.path.join(D, "_raw")
 
 BG_MAP = [
